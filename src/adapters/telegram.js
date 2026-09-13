@@ -14,4 +14,22 @@ export class TelegramAdapter {
     if (!response.ok || !data.ok) throw new Error(data.description ?? `Telegram request failed (${response.status})`);
     return data.result;
   }
+
+  async getIdentity() {
+    const response = await fetch(`https://api.telegram.org/bot${this.botToken}/getMe`);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.description ?? `Telegram request failed (${response.status})`);
+    return { id: data.result.id, name: data.result.first_name, username: data.result.username };
+  }
+
+  async setWebhook({ url, secretToken }) {
+    const response = await fetch(`https://api.telegram.org/bot${this.botToken}/setWebhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url, secret_token: secretToken, allowed_updates: ["message"] })
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.ok) throw new Error(data.description ?? `Telegram webhook setup failed (${response.status})`);
+    return data;
+  }
 }

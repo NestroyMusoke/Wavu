@@ -12,7 +12,7 @@ import { InstagramAdapter } from "./adapters/instagram.js";
 import { TikTokBusinessAdapter } from "./adapters/tiktok-business.js";
 import { WhatsAppAdapter } from "./adapters/whatsapp.js";
 import { TelegramAdapter } from "./adapters/telegram.js";
-import { verifyMetaSignature, verifyTikTokSignature } from "./security/webhook-signatures.js";
+import { verifyMetaSignature, verifySecretToken, verifyTikTokSignature } from "./security/webhook-signatures.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = resolve(root, "public");
@@ -53,6 +53,15 @@ async function configureGoogleSheets() {
   if (products.length) store.state.products = products;
   store.setChangeHandler((snapshot) => googleMirror.enqueue(snapshot));
   await googleMirror.enqueue(store.snapshot());
+}
+
+async function configureTelegramWebhook() {
+  if (!telegram || !process.env.TELEGRAM_WEBHOOK_SECRET || !publicBaseUrl.startsWith("https://")) return;
+  await telegram.setWebhook({
+    url: `${publicBaseUrl}/webhooks/telegram`,
+    secretToken: process.env.TELEGRAM_WEBHOOK_SECRET
+  });
+  console.log("Telegram webhook ready");
 }
 
 const mime = {
@@ -162,6 +171,11 @@ const server = createServer(async (req, res) => {
       googleSheets: googleMirror?.status ?? { configured: false, ready: false },
       vertexAi: { configured: Boolean(aiClassifier), model: process.env.VERTEX_MODEL ?? null }
     });
+    if (req.method === "GET" && url.pathname === "/api/integrations/telegram") {
+      if (!telegram) return send(res, 400, { configured: false });
+      const identity = await telegram.getIdentity();
+      return send(res, 200, { configured: true, ready: true, identity });
+    }
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, store.snapshot());
     if (req.method === "GET" && url.pathname === "/api/evaluate") return send(res, 200, evaluateState(store.snapshot()));
     if (req.method === "GET" && url.pathname === "/api/integrations/google") return send(res, 200, googleMirror?.status ?? { configured: false, ready: false });
@@ -185,6 +199,34 @@ const server = createServer(async (req, res) => {
       const result = workflow.receivePrivateMessage(input, "telegram");
       if (telegram && result.reply) await telegram.sendText({ text: result.reply, chatId: input.chatId });
       return send(res, result.ok ? 200 : 400, { ...result, channel: "telegram", delivered: Boolean(telegram) });
+    }
+
+    if (req.method === "POST" && url.pathname === "/webhooks/telegram") {
+      if (!verifySecretToken(process.env.TELEGRAM_WEBHOOK_SECRET, req.headers["x-telegram-bot-api-secret-token"])) {
+        return send(res, 401, { received: false });
+      }
+      const update = await readJson(req);
+      const message = update.message;
+      if (!message?.text || !message.chat?.id) return send(res, 200, { received: true, ignored: true });
+      const chatId = String(message.chat.id);
+      const allowedChatId = String(process.env.TELEGRAM_CHAT_ID ?? "");
+      if (allowedChatId && chatId !== allowedChatId) return send(res, 200, { received: true, ignored: true });
+
+      let text = String(message.text);
+      let token = text.match(/\bWV-\d{4}\b/i)?.[0]?.toUpperCase();
+      if (token) store.rememberSession({ channel: "telegram", participantId: chatId, token });
+      if (!token) {
+        token = store.recallSession({ channel: "telegram", participantId: chatId });
+        if (token) text = `${text} ${token}`;
+      }
+      const result = workflow.receivePrivateMessage({
+        messageId: `tg-${update.update_id ?? message.message_id}`,
+        customerAlias: message.from?.username ? `@${message.from.username}` : message.from?.first_name ?? "Telegram buyer",
+        text,
+        deliveryLocation: "To be confirmed"
+      }, "telegram");
+      if (telegram && result.reply) await telegram.sendText({ text: result.reply, chatId });
+      return send(res, 200, { received: true, processed: true, ok: result.ok });
     }
 
     if (req.method === "GET" && url.pathname === "/webhooks/meta") {
@@ -244,9 +286,9 @@ const server = createServer(async (req, res) => {
   }
 });
 
-configureGoogleSheets().then(() => {
-  server.listen(port, () => console.log(`Wavu running at ${publicBaseUrl}`));
-}).catch((error) => {
-  console.error(`Google Sheets startup failed: ${error.message}`);
-  server.listen(port, () => console.log(`Wavu running at ${publicBaseUrl} (local fallback)`));
-});
+configureGoogleSheets()
+  .catch((error) => console.error(`Google Sheets startup failed: ${error.message}`))
+  .finally(() => {
+    server.listen(port, () => console.log(`Wavu running at ${publicBaseUrl}`));
+    configureTelegramWebhook().catch((error) => console.error(`Telegram webhook startup failed: ${error.message}`));
+  });

@@ -7,6 +7,10 @@ function money(currency, amount) {
 function handoffLink(publicBaseUrl, token, handoffChannel) {
   const message = `Hi, I am asking about the item from social media — ${token}`;
   const target = process.env.DEMO_WHATSAPP_NUMBER?.replace(/\D/g, "") ?? "";
+  const telegramUsername = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "") ?? "";
+  if (handoffChannel.toLowerCase() === "telegram" && telegramUsername) {
+    return `https://t.me/${telegramUsername}?start=${encodeURIComponent(token)}`;
+  }
   return handoffChannel.toLowerCase() === "whatsapp" && target
     ? `https://wa.me/${target}?text=${encodeURIComponent(message)}`
     : `${publicBaseUrl}/?handoff=${encodeURIComponent(token)}`;

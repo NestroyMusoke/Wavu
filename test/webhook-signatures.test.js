@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
-import { verifyMetaSignature, verifyTikTokSignature } from "../src/security/webhook-signatures.js";
+import { verifyMetaSignature, verifySecretToken, verifyTikTokSignature } from "../src/security/webhook-signatures.js";
 
 test("verifies Meta webhook HMAC and rejects tampering", () => {
   const secret = "meta-secret";
@@ -19,4 +19,11 @@ test("verifies TikTok webhook HMAC and timestamp freshness", () => {
   const header = `t=${timestamp},s=${signature}`;
   assert.equal(verifyTikTokSignature({ secret, rawBody, header, nowSeconds: timestamp }), true);
   assert.equal(verifyTikTokSignature({ secret, rawBody, header, nowSeconds: timestamp + 301 }), false);
+});
+
+test("verifies Telegram webhook secret without accepting missing or partial values", () => {
+  assert.equal(verifySecretToken("telegram-secret", "telegram-secret"), true);
+  assert.equal(verifySecretToken("telegram-secret", "telegram-secre"), false);
+  assert.equal(verifySecretToken("telegram-secret", "wrong-secret"), false);
+  assert.equal(verifySecretToken("telegram-secret", undefined), false);
 });

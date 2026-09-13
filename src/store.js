@@ -14,6 +14,7 @@ function freshState() {
     handoffs: {},
     orders: {},
     events: [],
+    sessions: {},
     sequences: { workflow: 0, order: 0 }
   };
 }
@@ -25,6 +26,7 @@ export class Store {
     this.state = persist && existsSync(runtimePath)
       ? JSON.parse(readFileSync(runtimePath, "utf8"))
       : freshState();
+    this.state.sessions ??= {};
   }
 
   reset() {
@@ -78,6 +80,15 @@ export class Store {
     };
     this.save();
     return structuredClone(this.state.handoffs[token]);
+  }
+
+  rememberSession({ channel, participantId, token }) {
+    this.state.sessions[`${channel}:${participantId}`] = { token, updatedAt: new Date().toISOString() };
+    this.save();
+  }
+
+  recallSession({ channel, participantId }) {
+    return this.state.sessions[`${channel}:${participantId}`]?.token ?? null;
   }
 
   reserve({ token, customerAlias = "Private-chat buyer", deliveryLocation = "Pickup", channel = "whatsapp" }) {

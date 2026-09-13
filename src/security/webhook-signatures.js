@@ -5,6 +5,13 @@ function safeHexEqual(left, right) {
   return timingSafeEqual(Buffer.from(left, "hex"), Buffer.from(right, "hex"));
 }
 
+export function verifySecretToken(expected, received) {
+  if (!expected || !received) return false;
+  const left = Buffer.from(String(expected));
+  const right = Buffer.from(String(received));
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
 export function verifyMetaSignature({ secret, rawBody, header }) {
   if (!secret) return true;
   const received = String(header ?? "").replace(/^sha256=/, "");

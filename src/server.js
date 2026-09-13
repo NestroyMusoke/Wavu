@@ -98,7 +98,13 @@ const server = createServer(async (req, res) => {
   try {
     const url = new URL(req.url, publicBaseUrl);
     if (req.method === "OPTIONS") return send(res, 204, "", "text/plain");
-    if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { status: "ok", app: "wavu", mode: process.env.APP_MODE ?? "demo" });
+    if (req.method === "GET" && url.pathname === "/health") return send(res, 200, {
+      status: "ok",
+      app: "wavu",
+      mode: process.env.APP_MODE ?? "demo",
+      ai: { configured: Boolean(aiClassifier), provider: aiClassifier ? "vertex-ai" : null, model: process.env.VERTEX_MODEL ?? null },
+      sheets: googleMirror?.status ?? { configured: false, ready: false }
+    });
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, store.snapshot());
     if (req.method === "GET" && url.pathname === "/api/evaluate") return send(res, 200, evaluateState(store.snapshot()));
     if (req.method === "GET" && url.pathname === "/api/integrations/google") return send(res, 200, googleMirror?.status ?? { configured: false, ready: false });

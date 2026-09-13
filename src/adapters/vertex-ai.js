@@ -24,7 +24,7 @@ export class VertexCommentClassifier {
         contents: [{ role: "user", parts: [{ text: String(text) }] }],
         generationConfig: {
           temperature: 0,
-          maxOutputTokens: 250,
+          maxOutputTokens: 512,
           responseMimeType: "application/json",
           responseSchema: {
             type: "OBJECT",

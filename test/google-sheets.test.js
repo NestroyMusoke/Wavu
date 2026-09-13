@@ -19,7 +19,11 @@ test("loads products from Google Sheets into domain shape", async () => {
 
 test("syncs inventory, orders, handoffs, and events to four tabs", async () => {
   const updates = [];
-  const adapter = { update: async (range, values) => updates.push({ range, values }) };
+  const clears = [];
+  const adapter = {
+    clear: async (range) => clears.push(range),
+    update: async (range, values) => updates.push({ range, values })
+  };
   const mirror = new GoogleSheetsMirror({ adapter });
   await mirror.sync({
     products: [{ productId: "p1", postId: "post1", name: "Dress", currency: "UGX", price: 65000, variant: "M", stock: 1, location: "Ntinda", deliveryZones: { Kampala: 5000 }, active: true }],
@@ -27,5 +31,6 @@ test("syncs inventory, orders, handoffs, and events to four tabs", async () => {
   });
   assert.deepEqual(updates.map((update) => update.range).sort(), ["Events!A1", "Handoffs!A1", "Orders!A1", "Products!A1"]);
   assert.equal(mirror.status.ready, true);
+  assert.deepEqual(clears.sort(), ["Events!A:Z", "Handoffs!A:Z", "Orders!A:Z", "Products!A:Z"]);
   assert.match(updates.find((update) => update.range === "Products!A1").values[1][9], /Kampala/);
 });

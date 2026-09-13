@@ -16,7 +16,7 @@ async function api(path, options = {}) {
 }
 
 async function refresh() {
-  const [state, evaluation] = await Promise.all([api("/api/state"), api("/api/evaluate")]);
+  const [state, evaluation, health, google] = await Promise.all([api("/api/state"), api("/api/evaluate"), api("/health"), api("/api/integrations/google")]);
   const events = state.events;
   $("#events").innerHTML = events.length ? events.map((event) => `<div class="event ${event.status}"><i class="dot"></i><time>${new Date(event.occurredAt).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'})}<br>${event.channel}</time><p><strong>${event.type.replaceAll('_',' ')}</strong><br>${escapeHtml(event.detail)}</p></div>`).join("") : '<p class="empty">Run a scenario to watch Wavu work.</p>';
   $("#products").innerHTML = state.products.map((p) => `<div class="product"><strong>${p.name}</strong><span>Size ${p.variant}</span><span>${p.currency} ${p.price.toLocaleString()}</span><span class="pill">${p.stock} in stock</span></div>`).join("");
@@ -24,6 +24,8 @@ async function refresh() {
   $("#intentCount").textContent = Object.values(state.comments).filter((c) => c.classification?.actionable).length;
   $("#orderCount").textContent = Object.keys(state.orders).length;
   $("#testScore").textContent = `${evaluation.passed}/${evaluation.total}`;
+  $("#runtimeMode").textContent = health.ai?.configured ? "GEMINI + LIVE APPS" : "SAFE FALLBACK";
+  $("#sheetStatus").textContent = google.ready && !google.lastError ? "● Google Sheets live" : google.lastError ? "Google Sheets fallback" : "Google Sheets connecting…";
 }
 
 function escapeHtml(value) {

@@ -46,6 +46,13 @@ export class GoogleSheetsAdapter {
       body: JSON.stringify({ values })
     });
   }
+
+  async clear(range) {
+    return this.request(`/values/${encodedRange(range)}:clear`, {
+      method: "POST",
+      body: "{}"
+    });
+  }
 }
 
 function table(headers, rows) {
@@ -109,11 +116,15 @@ export class GoogleSheetsMirror {
     const eventHeaders = ["event_id", "occurred_at", "workflow_id", "event_type", "channel", "external_id", "status", "detail"];
     const events = snapshot.events.map((event, index) => ({ event_id: `${event.workflowId ?? "NOFLOW"}-${index + 1}`, occurred_at: event.occurredAt, workflow_id: event.workflowId ?? "", event_type: event.type, channel: event.channel, external_id: event.externalId, status: event.status, detail: event.detail }));
 
+    const writeTable = async (sheet, values) => {
+      if (this.adapter.clear) await this.adapter.clear(`${sheet}!A:Z`);
+      await this.adapter.update(`${sheet}!A1`, values);
+    };
     await Promise.all([
-      this.adapter.update("Products!A1", table(productHeaders, products)),
-      this.adapter.update("Orders!A1", table(orderHeaders, orders)),
-      this.adapter.update("Handoffs!A1", table(handoffHeaders, handoffs)),
-      this.adapter.update("Events!A1", table(eventHeaders, events))
+      writeTable("Products", table(productHeaders, products)),
+      writeTable("Orders", table(orderHeaders, orders)),
+      writeTable("Handoffs", table(handoffHeaders, handoffs)),
+      writeTable("Events", table(eventHeaders, events))
     ]);
     this.status.ready = true;
     this.status.lastSyncedAt = new Date().toISOString();

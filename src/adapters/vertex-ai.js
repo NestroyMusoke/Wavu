@@ -13,7 +13,7 @@ export class VertexCommentClassifier {
   }
 
   async classify(text) {
-    this.credentials ??= await loadServiceAccount(this.serviceAccountFile);
+    if (this.serviceAccountFile) this.credentials ??= await loadServiceAccount(this.serviceAccountFile);
     const token = await getGoogleAccessToken({ credentials: this.credentials, scopes: ["https://www.googleapis.com/auth/cloud-platform"] });
     const endpoint = `https://aiplatform.googleapis.com/v1/projects/${this.projectId}/locations/${this.location}/publishers/google/models/${this.model}:generateContent`;
     const response = await fetch(endpoint, {

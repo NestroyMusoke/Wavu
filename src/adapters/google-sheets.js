@@ -14,7 +14,7 @@ export class GoogleSheetsAdapter {
   }
 
   async token(scopes = SCOPES) {
-    this.credentials ??= await loadServiceAccount(this.serviceAccountFile);
+    if (this.serviceAccountFile) this.credentials ??= await loadServiceAccount(this.serviceAccountFile);
     return getGoogleAccessToken({ credentials: this.credentials, scopes });
   }
 

@@ -1,0 +1,9 @@
+.git
+.env
+.secrets
+data/runtime.json
+node_modules
+coverage
+test
+scripts
+*.md

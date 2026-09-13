@@ -13,6 +13,14 @@ export async function loadServiceAccount(filePath) {
 }
 
 export async function getGoogleAccessToken({ credentials, scopes }) {
+  if (!credentials) {
+    const response = await fetch("http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token", {
+      headers: { "Metadata-Flavor": "Google" }
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(`Google metadata token failed: ${result.error ?? response.status}`);
+    return result.access_token;
+  }
   const now = Math.floor(Date.now() / 1000);
   const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const payload = base64url(JSON.stringify({

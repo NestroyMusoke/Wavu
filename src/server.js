@@ -8,13 +8,16 @@ import { WavuWorkflow } from "./domain/workflow.js";
 import { evaluateState } from "./evaluate.js";
 import { GoogleSheetsAdapter, GoogleSheetsMirror } from "./adapters/google-sheets.js";
 import { VertexCommentClassifier } from "./adapters/vertex-ai.js";
+import { InstagramAdapter } from "./adapters/instagram.js";
+import { TikTokBusinessAdapter } from "./adapters/tiktok-business.js";
+import { verifyMetaSignature, verifyTikTokSignature } from "./security/webhook-signatures.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = resolve(root, "public");
 const port = Number(process.env.PORT ?? 8787);
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 const store = new Store();
-const aiClassifier = process.env.GOOGLE_CLOUD_PROJECT && process.env.GOOGLE_SERVICE_ACCOUNT_FILE
+const aiClassifier = process.env.GOOGLE_CLOUD_PROJECT
   ? new VertexCommentClassifier({
       projectId: process.env.GOOGLE_CLOUD_PROJECT,
       serviceAccountFile: process.env.GOOGLE_SERVICE_ACCOUNT_FILE,
@@ -23,12 +26,18 @@ const aiClassifier = process.env.GOOGLE_CLOUD_PROJECT && process.env.GOOGLE_SERV
     })
   : null;
 const workflow = new WavuWorkflow({ store, publicBaseUrl, aiClassifier });
+const instagram = process.env.META_ACCESS_TOKEN && process.env.INSTAGRAM_ACCOUNT_ID
+  ? new InstagramAdapter({ accessToken: process.env.META_ACCESS_TOKEN, accountId: process.env.INSTAGRAM_ACCOUNT_ID, graphVersion: process.env.META_GRAPH_VERSION ?? "v24.0" })
+  : null;
+const tiktok = process.env.TIKTOK_ACCESS_TOKEN && process.env.TIKTOK_BUSINESS_ID
+  ? new TikTokBusinessAdapter({ accessToken: process.env.TIKTOK_ACCESS_TOKEN, businessId: process.env.TIKTOK_BUSINESS_ID })
+  : null;
 let googleMirror = null;
 
 async function configureGoogleSheets() {
   const spreadsheetId = process.env.GOOGLE_SHEET_ID;
   const serviceAccountFile = process.env.GOOGLE_SERVICE_ACCOUNT_FILE;
-  if (!spreadsheetId || !serviceAccountFile) return;
+  if (!spreadsheetId) return;
   googleMirror = new GoogleSheetsMirror({
     adapter: new GoogleSheetsAdapter({ spreadsheetId, serviceAccountFile })
   });
@@ -46,10 +55,13 @@ function send(res, status, body, contentType = "application/json; charset=utf-8"
 }
 
 async function readJson(req) {
+  return JSON.parse(await readBody(req) || "{}");
+}
+
+async function readBody(req) {
   const chunks = [];
   for await (const chunk of req) chunks.push(chunk);
-  if (!chunks.length) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  return Buffer.concat(chunks).toString("utf8");
 }
 
 function parseMetaComments(payload) {
@@ -83,6 +95,27 @@ function parseWhatsAppMessages(payload) {
   return messages;
 }
 
+function parseTikTokComments(payload) {
+  const source = payload.data ?? payload;
+  const comments = source.comments ?? source.comment_list ?? (source.comment ? [source.comment] : []);
+  return comments.filter((comment) => comment.id && comment.text).map((comment) => ({
+    commentId: String(comment.id),
+    postId: String(comment.video_id ?? source.video_id ?? "unknown"),
+    customerHandle: String(comment.username ?? comment.display_name ?? "tiktok_customer"),
+    text: String(comment.text),
+    source: "tiktok"
+  }));
+}
+
+async function processExternalComment(comment, reply) {
+  const result = await workflow.receiveSocialCommentWithAI(comment);
+  if (!result.duplicate && result.result?.reply && result.result.status !== "ignored") {
+    await reply(result.result.reply);
+    store.addEvent({ workflowId: result.result.workflowId ?? null, type: "social_reply_posted", channel: comment.source, externalId: comment.commentId, status: "verified", detail: "Grounded reply posted to the original comment" });
+  }
+  return result;
+}
+
 async function serveStatic(pathname, res) {
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\//, "");
   if (relative.includes("..")) return send(res, 400, { error: "invalid_path" });
@@ -104,6 +137,13 @@ const server = createServer(async (req, res) => {
       mode: process.env.APP_MODE ?? "demo",
       ai: { configured: Boolean(aiClassifier), provider: aiClassifier ? "vertex-ai" : null, model: process.env.VERTEX_MODEL ?? null },
       sheets: googleMirror?.status ?? { configured: false, ready: false }
+    });
+    if (req.method === "GET" && url.pathname === "/api/integrations") return send(res, 200, {
+      instagram: { configured: Boolean(instagram) },
+      tiktok: { configured: Boolean(tiktok) },
+      whatsapp: { configured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) },
+      googleSheets: googleMirror?.status ?? { configured: false, ready: false },
+      vertexAi: { configured: Boolean(aiClassifier), model: process.env.VERTEX_MODEL ?? null }
     });
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, store.snapshot());
     if (req.method === "GET" && url.pathname === "/api/evaluate") return send(res, 200, evaluateState(store.snapshot()));
@@ -133,12 +173,40 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/webhooks/meta") {
-      const payload = await readJson(req);
+      const rawBody = await readBody(req);
+      if (!verifyMetaSignature({ secret: process.env.META_APP_SECRET, rawBody, header: req.headers["x-hub-signature-256"] })) return send(res, 401, { error: "invalid_meta_signature" });
+      const payload = JSON.parse(rawBody || "{}");
+      const metaComments = parseMetaComments(payload);
       const results = await Promise.all([
-        ...parseMetaComments(payload).map((comment) => workflow.receiveSocialCommentWithAI(comment)),
+        ...metaComments.map((comment) => instagram
+          ? processExternalComment(comment, (reply) => instagram.replyToComment(comment.commentId, reply))
+          : workflow.receiveSocialCommentWithAI(comment)),
         ...parseWhatsAppMessages(payload).map((message) => workflow.receiveWhatsAppMessage(message))
       ]);
       return send(res, 200, { received: true, processed: results.length, results });
+    }
+
+    if (req.method === "GET" && url.pathname === "/webhooks/tiktok") {
+      return send(res, 200, url.searchParams.get("challenge") ?? "wavu-tiktok-webhook", "text/plain");
+    }
+    if (req.method === "POST" && url.pathname === "/webhooks/tiktok") {
+      const rawBody = await readBody(req);
+      if (!verifyTikTokSignature({ secret: process.env.TIKTOK_CLIENT_SECRET ?? process.env.TIKTOK_WEBHOOK_SECRET, rawBody, header: req.headers["tiktok-signature"] })) return send(res, 401, { error: "invalid_tiktok_signature" });
+      const payload = JSON.parse(rawBody || "{}");
+      const comments = parseTikTokComments(payload);
+      const results = await Promise.all(comments.map((comment) => tiktok
+        ? processExternalComment(comment, (reply) => tiktok.replyToComment({ videoId: comment.postId, commentId: comment.commentId, text: reply }))
+        : workflow.receiveSocialCommentWithAI(comment)));
+      return send(res, 200, { received: true, processed: results.length, results });
+    }
+    if (req.method === "POST" && url.pathname === "/api/integrations/tiktok/poll") {
+      if (!tiktok) return send(res, 400, { error: "tiktok_not_configured" });
+      const { videoId } = await readJson(req);
+      if (!videoId) return send(res, 400, { error: "video_id_required" });
+      const page = await tiktok.listComments(videoId);
+      const comments = parseTikTokComments({ data: { ...page, video_id: videoId } });
+      const results = await Promise.all(comments.map((comment) => processExternalComment(comment, (reply) => tiktok.replyToComment({ videoId, commentId: comment.commentId, text: reply }))));
+      return send(res, 200, { processed: results.length, results, cursor: page.cursor, hasMore: page.has_more });
     }
 
     if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/webhooks/")) return send(res, 404, { error: "not_found" });

@@ -39,12 +39,25 @@ function responseFor({ product, classification, handoff, publicBaseUrl }) {
 }
 
 export class WavuWorkflow {
-  constructor({ store, publicBaseUrl = "http://localhost:8787" }) {
+  constructor({ store, publicBaseUrl = "http://localhost:8787", aiClassifier = null }) {
     this.store = store;
     this.publicBaseUrl = publicBaseUrl;
+    this.aiClassifier = aiClassifier;
   }
 
-  receiveSocialComment(input) {
+  async receiveSocialCommentWithAI(input) {
+    const deterministic = classifyComment(input.text);
+    if (!this.aiClassifier || deterministic.category === "noise") return this.receiveSocialComment(input, deterministic);
+    try {
+      const classification = await this.aiClassifier.classify(input.text);
+      return this.receiveSocialComment(input, classification);
+    } catch (error) {
+      this.store.addEvent({ workflowId: null, type: "ai_fallback", channel: input.source ?? "unknown", externalId: input.commentId, status: "safe", detail: `Gemini unavailable; deterministic classifier used: ${error.message}` });
+      return this.receiveSocialComment(input, { ...deterministic, engine: "deterministic-fallback" });
+    }
+  }
+
+  receiveSocialComment(input, classificationOverride = null) {
     const comment = {
       commentId: String(input.commentId),
       postId: String(input.postId),
@@ -59,7 +72,7 @@ export class WavuWorkflow {
       return { ok: true, duplicate: true, result: structuredClone(existing) };
     }
 
-    const classification = classifyComment(comment.text);
+    const classification = classificationOverride ?? classifyComment(comment.text);
     if (!classification.actionable) {
       const result = { ...comment, classification, status: "ignored" };
       this.store.state.comments[comment.commentId] = result;

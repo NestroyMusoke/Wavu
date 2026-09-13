@@ -10,6 +10,8 @@ import { GoogleSheetsAdapter, GoogleSheetsMirror } from "./adapters/google-sheet
 import { VertexCommentClassifier } from "./adapters/vertex-ai.js";
 import { InstagramAdapter } from "./adapters/instagram.js";
 import { TikTokBusinessAdapter } from "./adapters/tiktok-business.js";
+import { WhatsAppAdapter } from "./adapters/whatsapp.js";
+import { TelegramAdapter } from "./adapters/telegram.js";
 import { verifyMetaSignature, verifyTikTokSignature } from "./security/webhook-signatures.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,6 +33,12 @@ const instagram = process.env.META_ACCESS_TOKEN && process.env.INSTAGRAM_ACCOUNT
   : null;
 const tiktok = process.env.TIKTOK_ACCESS_TOKEN && process.env.TIKTOK_BUSINESS_ID
   ? new TikTokBusinessAdapter({ accessToken: process.env.TIKTOK_ACCESS_TOKEN, businessId: process.env.TIKTOK_BUSINESS_ID })
+  : null;
+const whatsapp = process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID
+  ? new WhatsAppAdapter({ accessToken: process.env.WHATSAPP_ACCESS_TOKEN, phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID, graphVersion: process.env.META_GRAPH_VERSION ?? "v24.0" })
+  : null;
+const telegram = process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID
+  ? new TelegramAdapter({ botToken: process.env.TELEGRAM_BOT_TOKEN, chatId: process.env.TELEGRAM_CHAT_ID })
   : null;
 let googleMirror = null;
 
@@ -149,7 +157,8 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/api/integrations") return send(res, 200, {
       instagram: { configured: Boolean(instagram) },
       tiktok: { configured: Boolean(tiktok) },
-      whatsapp: { configured: Boolean(process.env.WHATSAPP_ACCESS_TOKEN && process.env.WHATSAPP_PHONE_NUMBER_ID) },
+      whatsapp: { configured: Boolean(whatsapp) },
+      telegram: { configured: Boolean(telegram) },
       googleSheets: googleMirror?.status ?? { configured: false, ready: false },
       vertexAi: { configured: Boolean(aiClassifier), model: process.env.VERTEX_MODEL ?? null }
     });
@@ -171,6 +180,12 @@ const server = createServer(async (req, res) => {
       const result = workflow.receiveWhatsAppMessage(await readJson(req));
       return send(res, result.ok ? 200 : 400, result);
     }
+    if (req.method === "POST" && url.pathname === "/api/demo/telegram") {
+      const input = await readJson(req);
+      const result = workflow.receiveWhatsAppMessage(input);
+      if (telegram && result.reply) await telegram.sendText({ text: result.reply, chatId: input.chatId });
+      return send(res, result.ok ? 200 : 400, { ...result, channel: "telegram", delivered: Boolean(telegram) });
+    }
 
     if (req.method === "GET" && url.pathname === "/webhooks/meta") {
       const mode = url.searchParams.get("hub.mode");
@@ -189,7 +204,11 @@ const server = createServer(async (req, res) => {
         ...metaComments.map((comment) => instagram
           ? processExternalComment(comment, (reply) => instagram.replyToComment(comment.commentId, reply))
           : workflow.receiveSocialCommentWithAI(comment)),
-        ...parseWhatsAppMessages(payload).map((message) => workflow.receiveWhatsAppMessage(message))
+        ...parseWhatsAppMessages(payload).map(async (message) => {
+          const result = workflow.receiveWhatsAppMessage(message);
+          if (whatsapp && result.reply && message.customerAlias) await whatsapp.sendText({ to: message.customerAlias, text: result.reply });
+          return result;
+        })
       ]);
       return send(res, 200, { received: true, processed: results.length, results });
     }

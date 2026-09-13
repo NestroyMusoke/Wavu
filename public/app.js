@@ -42,7 +42,7 @@ document.querySelectorAll("[data-comment]").forEach((button) => button.addEventL
 $("#continue").addEventListener("click", async () => {
   if (!activeToken) await postComment("price");
   messageSequence += 1;
-  await api("/api/demo/whatsapp", { method: "POST", body: JSON.stringify({ messageId: `wa-${messageSequence}`, customerAlias: "Amina", text: `CONFIRM ${activeToken}`, deliveryLocation: "Entebbe" }) });
+  await api("/api/demo/telegram", { method: "POST", body: JSON.stringify({ messageId: `tg-${messageSequence}`, customerAlias: "Amina", text: `CONFIRM ${activeToken}`, deliveryLocation: "Entebbe" }) });
   await refresh();
 });
 $("#secondBuyer").addEventListener("click", async () => {

@@ -80,7 +80,7 @@ export class Store {
     return structuredClone(this.state.handoffs[token]);
   }
 
-  reserve({ token, customerAlias = "WhatsApp buyer", deliveryLocation = "Pickup" }) {
+  reserve({ token, customerAlias = "Private-chat buyer", deliveryLocation = "Pickup", channel = "whatsapp" }) {
     const handoff = this.state.handoffs[token];
     if (!handoff) return { ok: false, code: "UNKNOWN_TOKEN" };
     if (Date.parse(handoff.expiresAt) < Date.now()) return { ok: false, code: "EXPIRED_TOKEN" };
@@ -96,7 +96,7 @@ export class Store {
       orderId,
       createdAt: new Date().toISOString(),
       customerAlias,
-      channel: "whatsapp",
+      channel,
       productId: product.productId,
       productName: product.name,
       variant: product.variant,

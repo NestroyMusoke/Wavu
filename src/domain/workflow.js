@@ -4,15 +4,15 @@ function money(currency, amount) {
   return `${currency} ${Number(amount).toLocaleString("en-US")}`;
 }
 
-function whatsappLink(publicBaseUrl, token) {
+function handoffLink(publicBaseUrl, token, handoffChannel) {
   const message = `Hi, I am asking about the item from social media — ${token}`;
   const target = process.env.DEMO_WHATSAPP_NUMBER?.replace(/\D/g, "") ?? "";
-  return target
+  return handoffChannel.toLowerCase() === "whatsapp" && target
     ? `https://wa.me/${target}?text=${encodeURIComponent(message)}`
     : `${publicBaseUrl}/?handoff=${encodeURIComponent(token)}`;
 }
 
-function responseFor({ product, classification, handoff, publicBaseUrl }) {
+function responseFor({ product, classification, handoff, publicBaseUrl, handoffChannel }) {
   const intents = new Set(classification.intents);
   if (classification.category === "complaint") {
     return "We're sorry about this. A person from the shop will review your order and contact you privately.";
@@ -21,7 +21,7 @@ function responseFor({ product, classification, handoff, publicBaseUrl }) {
     return `Thanks for asking. ${money(product.currency, product.price)} is the listed price; the owner will review your request privately.`;
   }
   if (classification.category === "high_value") {
-    return `We can help with a bulk order. Continue privately so the owner can confirm quantity and pricing: ${whatsappLink(publicBaseUrl, handoff.token)}`;
+    return `We can help with a bulk order. Continue in ${handoffChannel} so the owner can confirm quantity and pricing: ${handoffLink(publicBaseUrl, handoff.token, handoffChannel)}`;
   }
 
   const parts = [];
@@ -35,14 +35,15 @@ function responseFor({ product, classification, handoff, publicBaseUrl }) {
   if (intents.has("delivery")) parts.push("delivery is available to configured areas");
   const answer = parts.length ? `${parts.join("; ")}.` : "Thanks for asking.";
   if (product.stock < 1) return answer;
-  return `${answer} Continue on WhatsApp to reserve it: ${whatsappLink(publicBaseUrl, handoff.token)}`;
+  return `${answer} Continue in ${handoffChannel} to reserve it: ${handoffLink(publicBaseUrl, handoff.token, handoffChannel)}`;
 }
 
 export class WavuWorkflow {
-  constructor({ store, publicBaseUrl = "http://localhost:8787", aiClassifier = null }) {
+  constructor({ store, publicBaseUrl = "http://localhost:8787", aiClassifier = null, handoffChannel = process.env.DEMO_PRIVATE_CHANNEL ?? "WhatsApp" }) {
     this.store = store;
     this.publicBaseUrl = publicBaseUrl;
     this.aiClassifier = aiClassifier;
+    this.handoffChannel = handoffChannel;
   }
 
   async receiveSocialCommentWithAI(input) {
@@ -97,7 +98,7 @@ export class WavuWorkflow {
       requestedVariant: classification.requestedVariant ?? product.variant,
       intents: classification.intents
     });
-    const reply = responseFor({ product, classification, handoff, publicBaseUrl: this.publicBaseUrl });
+    const reply = responseFor({ product, classification, handoff, publicBaseUrl: this.publicBaseUrl, handoffChannel: this.handoffChannel });
     const result = { ...comment, workflowId: handoff.token, classification, product: structuredClone(product), handoff, reply, status: classification.category === "complaint" || classification.category === "needs_human" ? "needs_human" : "answered" };
     this.store.state.comments[comment.commentId] = result;
     this.store.addEvent({ workflowId: handoff.token, type: "comment_answered", channel: comment.source, externalId: comment.commentId, status: result.status, detail: reply });
@@ -105,6 +106,10 @@ export class WavuWorkflow {
   }
 
   receiveWhatsAppMessage({ messageId, customerAlias, text, deliveryLocation = "Pickup" }) {
+    return this.receivePrivateMessage({ messageId, customerAlias, text, deliveryLocation }, "whatsapp");
+  }
+
+  receivePrivateMessage({ messageId, customerAlias, text, deliveryLocation = "Pickup" }, channel = "private-chat") {
     const token = String(text ?? "").match(/\bWV-\d{4}\b/i)?.[0]?.toUpperCase();
     if (!token) return { ok: false, code: "HANDOFF_TOKEN_MISSING", reply: "Please use the product link from the social-media reply so I know which item you mean." };
 
@@ -118,23 +123,23 @@ export class WavuWorkflow {
       const reply = product.stock > 0
         ? `You're asking about ${product.name}, size ${product.variant}, at ${money(product.currency, product.price)}. ${product.stock} left. Reply "CONFIRM ${token}" to reserve one.`
         : `${product.name}, size ${product.variant}, has just sold out. I can ask the owner about an alternative.`;
-      this.store.addEvent({ workflowId: token, type: "whatsapp_context_restored", channel: "whatsapp", externalId: messageId, status: product.stock > 0 ? "awaiting_confirmation" : "out_of_stock", detail: reply });
+      this.store.addEvent({ workflowId: token, type: `${channel}_context_restored`, channel, externalId: messageId, status: product.stock > 0 ? "awaiting_confirmation" : "out_of_stock", detail: reply });
       return { ok: true, reserved: false, reply, handoff: structuredClone(handoff), product: structuredClone(product) };
     }
 
-    const reservation = this.store.reserve({ token, customerAlias, deliveryLocation });
+    const reservation = this.store.reserve({ token, customerAlias, deliveryLocation, channel });
     if (!reservation.ok) {
       const reply = reservation.code === "OUT_OF_STOCK"
         ? `${product.name}, size ${product.variant}, sold out before the reservation completed. I have not created an order; I can offer another size or the red alternative.`
         : "I could not safely complete that reservation. The shop owner has been asked to help.";
-      this.store.addEvent({ workflowId: token, type: "reservation_failed", channel: "whatsapp", externalId: messageId, status: "failed_truthfully", detail: `${reservation.code}: ${reply}` });
+      this.store.addEvent({ workflowId: token, type: "reservation_failed", channel, externalId: messageId, status: "failed_truthfully", detail: `${reservation.code}: ${reply}` });
       return { ...reservation, reply };
     }
 
     const reply = reservation.duplicate
       ? `Your reservation ${reservation.order.orderId} already exists—nothing was duplicated.`
       : `Reserved: ${reservation.order.productName}, size ${reservation.order.variant}, ${money(reservation.order.currency, reservation.order.unitPrice)}. Order ${reservation.order.orderId}.`;
-    this.store.addEvent({ workflowId: token, type: reservation.duplicate ? "duplicate_reservation_ignored" : "inventory_reserved", channel: "whatsapp", externalId: messageId, status: "verified", detail: reply });
+    this.store.addEvent({ workflowId: token, type: reservation.duplicate ? "duplicate_reservation_ignored" : "inventory_reserved", channel, externalId: messageId, status: "verified", detail: reply });
     return { ok: true, reserved: true, ...reservation, reply };
   }
 }

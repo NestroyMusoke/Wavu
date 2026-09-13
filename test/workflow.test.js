@@ -66,6 +66,15 @@ test("duplicate confirmation is idempotent", () => {
   assert.equal(store.findProduct("demo_blue_dress", "M").stock, 0);
 });
 
+test("Telegram confirmation keeps the handoff channel in the order and audit trail", () => {
+  const { workflow, store } = setup();
+  const token = workflow.receiveSocialComment(buyerComment()).result.handoff.token;
+  const confirmed = workflow.receivePrivateMessage({ messageId: "tg1", customerAlias: "Amina", text: `CONFIRM ${token}` }, "telegram");
+  assert.equal(confirmed.ok, true);
+  assert.equal(confirmed.order.channel, "telegram");
+  assert.equal(store.state.events[0].channel, "telegram");
+});
+
 test("two buyers cannot reserve the same final unit", () => {
   const { workflow, store } = setup();
   const firstToken = workflow.receiveSocialComment(buyerComment("c1", "@amina")).result.handoff.token;

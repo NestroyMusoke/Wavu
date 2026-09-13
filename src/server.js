@@ -182,7 +182,7 @@ const server = createServer(async (req, res) => {
     }
     if (req.method === "POST" && url.pathname === "/api/demo/telegram") {
       const input = await readJson(req);
-      const result = workflow.receiveWhatsAppMessage(input);
+      const result = workflow.receivePrivateMessage(input, "telegram");
       if (telegram && result.reply) await telegram.sendText({ text: result.reply, chatId: input.chatId });
       return send(res, result.ok ? 200 : 400, { ...result, channel: "telegram", delivered: Boolean(telegram) });
     }

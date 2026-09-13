@@ -19,8 +19,9 @@ function freshState() {
 }
 
 export class Store {
-  constructor({ persist = true } = {}) {
+  constructor({ persist = true, onChange = null } = {}) {
     this.persist = persist;
+    this.onChange = onChange;
     this.state = persist && existsSync(runtimePath)
       ? JSON.parse(readFileSync(runtimePath, "utf8"))
       : freshState();
@@ -33,9 +34,15 @@ export class Store {
   }
 
   save() {
-    if (!this.persist) return;
-    mkdirSync(dirname(runtimePath), { recursive: true });
-    writeFileSync(runtimePath, JSON.stringify(this.state, null, 2));
+    if (this.persist) {
+      mkdirSync(dirname(runtimePath), { recursive: true });
+      writeFileSync(runtimePath, JSON.stringify(this.state, null, 2));
+    }
+    this.onChange?.(this.snapshot());
+  }
+
+  setChangeHandler(handler) {
+    this.onChange = handler;
   }
 
   snapshot() {

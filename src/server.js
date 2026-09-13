@@ -6,6 +6,7 @@ import { dirname } from "node:path";
 import { Store } from "./store.js";
 import { WavuWorkflow } from "./domain/workflow.js";
 import { evaluateState } from "./evaluate.js";
+import { GoogleSheetsAdapter, GoogleSheetsMirror } from "./adapters/google-sheets.js";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const publicDir = resolve(root, "public");
@@ -13,6 +14,20 @@ const port = Number(process.env.PORT ?? 8787);
 const publicBaseUrl = process.env.PUBLIC_BASE_URL ?? `http://localhost:${port}`;
 const store = new Store();
 const workflow = new WavuWorkflow({ store, publicBaseUrl });
+let googleMirror = null;
+
+async function configureGoogleSheets() {
+  const spreadsheetId = process.env.GOOGLE_SHEET_ID;
+  const serviceAccountFile = process.env.GOOGLE_SERVICE_ACCOUNT_FILE;
+  if (!spreadsheetId || !serviceAccountFile) return;
+  googleMirror = new GoogleSheetsMirror({
+    adapter: new GoogleSheetsAdapter({ spreadsheetId, serviceAccountFile })
+  });
+  const products = await googleMirror.loadProducts();
+  if (products.length) store.state.products = products;
+  store.setChangeHandler((snapshot) => googleMirror.enqueue(snapshot));
+  await googleMirror.enqueue(store.snapshot());
+}
 
 const mime = { ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".svg": "image/svg+xml" };
 
@@ -77,6 +92,12 @@ const server = createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { status: "ok", app: "wavu", mode: process.env.APP_MODE ?? "demo" });
     if (req.method === "GET" && url.pathname === "/api/state") return send(res, 200, store.snapshot());
     if (req.method === "GET" && url.pathname === "/api/evaluate") return send(res, 200, evaluateState(store.snapshot()));
+    if (req.method === "GET" && url.pathname === "/api/integrations/google") return send(res, 200, googleMirror?.status ?? { configured: false, ready: false });
+    if (req.method === "POST" && url.pathname === "/api/integrations/google/sync") {
+      if (!googleMirror) return send(res, 400, { configured: false, error: "google_sheets_not_configured" });
+      await googleMirror.enqueue(store.snapshot());
+      return send(res, googleMirror.status.lastError ? 502 : 200, googleMirror.status);
+    }
     if (req.method === "POST" && url.pathname === "/api/reset") return send(res, 200, store.reset());
 
     if (req.method === "POST" && url.pathname === "/api/demo/comment") {
@@ -113,4 +134,9 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(port, () => console.log(`Wavu running at ${publicBaseUrl}`));
+configureGoogleSheets().then(() => {
+  server.listen(port, () => console.log(`Wavu running at ${publicBaseUrl}`));
+}).catch((error) => {
+  console.error(`Google Sheets startup failed: ${error.message}`);
+  server.listen(port, () => console.log(`Wavu running at ${publicBaseUrl} (local fallback)`));
+});

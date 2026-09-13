@@ -1,4 +1,5 @@
 .env
+.secrets/
 *.pem
 *service-account*.json
 credentials*.json

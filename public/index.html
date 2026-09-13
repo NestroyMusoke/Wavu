@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wavu — Comments into customers</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main>
+    <header>
+      <div class="brand">WAVU<span>●</span></div>
+      <div class="status"><i></i> Demo store live</div>
+    </header>
+
+    <section class="hero">
+      <p class="eyebrow">SOCIAL COMMERCE, FINALLY CONNECTED</p>
+      <h1>Turn overlooked comments<br>into <em>customers.</em></h1>
+      <p class="sub">Wavu finds buying intent in social noise, checks what is actually in stock, and carries every serious buyer into WhatsApp.</p>
+      <div class="metrics">
+        <div><strong id="intentCount">0</strong><span>buying signals</span></div>
+        <div><strong id="orderCount">0</strong><span>orders protected</span></div>
+        <div><strong id="testScore">6/6</strong><span>outcome checks</span></div>
+      </div>
+    </section>
+
+    <section class="demo-grid">
+      <article class="panel controls">
+        <div class="panel-head"><span>Live demo controls</span><button id="reset">Reset</button></div>
+        <button class="scenario" data-comment="price"><b>1</b><span><strong>Buyer asks price + size</strong><small>“How much and do you have medium?”</small></span></button>
+        <button class="scenario" data-comment="noise"><b>2</b><span><strong>Noise arrives</strong><small>🔥🔥🔥 @friend</small></span></button>
+        <button class="scenario" data-comment="bulk"><b>3</b><span><strong>High-value buyer</strong><small>“I need 20 pieces this weekend”</small></span></button>
+        <button class="scenario" id="continue"><b>4</b><span><strong>Continue in WhatsApp</strong><small>Restore context and confirm</small></span></button>
+        <button class="scenario danger" id="secondBuyer"><b>5</b><span><strong>Scarce-stock test</strong><small>Second buyer requests the last unit</small></span></button>
+      </article>
+
+      <article class="panel timeline">
+        <div class="panel-head"><span>Verified action timeline</span><span class="mode">DEMO ADAPTERS</span></div>
+        <div id="events" class="events"><p class="empty">Run a scenario to watch Wavu work.</p></div>
+      </article>
+    </section>
+
+    <section class="panel inventory">
+      <div class="panel-head"><span>Ground truth — merchant inventory</span><span>Google Sheets adapter pending</span></div>
+      <div id="products"></div>
+    </section>
+
+    <section class="panel checks">
+      <div class="panel-head"><span>Independent outcome evaluation</span><button id="evaluate">Run checks</button></div>
+      <div id="assertions"></div>
+    </section>
+  </main>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

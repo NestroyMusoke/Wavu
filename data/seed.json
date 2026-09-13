@@ -1,0 +1,40 @@
+{
+  "products": [
+    {
+      "productId": "dress_blue_01",
+      "postId": "demo_blue_dress",
+      "name": "Blue Summer Dress",
+      "currency": "UGX",
+      "price": 65000,
+      "variant": "M",
+      "stock": 1,
+      "location": "Ntinda, Kampala",
+      "deliveryZones": { "Kampala": 5000, "Entebbe": 12000, "Mukono": 10000 },
+      "active": true
+    },
+    {
+      "productId": "dress_blue_01",
+      "postId": "demo_blue_dress",
+      "name": "Blue Summer Dress",
+      "currency": "UGX",
+      "price": 65000,
+      "variant": "L",
+      "stock": 3,
+      "location": "Ntinda, Kampala",
+      "deliveryZones": { "Kampala": 5000, "Entebbe": 12000, "Mukono": 10000 },
+      "active": true
+    },
+    {
+      "productId": "dress_red_02",
+      "postId": "demo_red_dress",
+      "name": "Red Evening Dress",
+      "currency": "UGX",
+      "price": 70000,
+      "variant": "M",
+      "stock": 4,
+      "location": "Ntinda, Kampala",
+      "deliveryZones": { "Kampala": 5000, "Entebbe": 12000, "Mukono": 10000 },
+      "active": true
+    }
+  ]
+}

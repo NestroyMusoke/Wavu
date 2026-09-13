@@ -1,0 +1,15 @@
+{
+  "name": "wavu",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Turn overlooked social comments into grounded WhatsApp orders.",
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

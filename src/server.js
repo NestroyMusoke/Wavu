@@ -64,6 +64,12 @@ async function configureTelegramWebhook() {
   console.log("Telegram webhook ready");
 }
 
+async function configureInstagramSubscription() {
+  if (!instagram) return;
+  await instagram.subscribeToComments();
+  console.log("Instagram comment subscription ready");
+}
+
 const mime = {
   ".html": "text/html; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -95,9 +101,11 @@ function parseMetaComments(payload) {
     for (const change of entry.changes ?? []) {
       const value = change.value ?? {};
       if (!value.id || !value.text) continue;
+      const receivedPostId = String(value.media?.id ?? value.media_id ?? "unknown");
+      const postId = process.env.INSTAGRAM_DEMO_MEDIA_ID === receivedPostId ? "demo_blue_dress" : receivedPostId;
       comments.push({
         commentId: value.id,
-        postId: value.media?.id ?? value.media_id ?? "unknown",
+        postId,
         customerHandle: value.from?.username ?? value.username ?? "instagram_customer",
         text: value.text,
         source: "instagram"
@@ -291,4 +299,5 @@ configureGoogleSheets()
   .finally(() => {
     server.listen(port, () => console.log(`Wavu running at ${publicBaseUrl}`));
     configureTelegramWebhook().catch((error) => console.error(`Telegram webhook startup failed: ${error.message}`));
+    configureInstagramSubscription().catch((error) => console.error(`Instagram subscription startup failed: ${error.message}`));
   });
